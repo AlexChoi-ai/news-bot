@@ -20,7 +20,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
+          # 에러의 원인이 된 cache 설정을 삭제했습니다.
 
       - name: Install dependencies
         run: |
@@ -29,7 +29,6 @@ jobs:
 
       - name: Run news bot script
         env:
-          # 이 아래 두 줄이 있어야 채널 아이디가 파이썬 코드로 전달됩니다!
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID_LIST: ${{ secrets.CHAT_ID_LIST }}
         run: python news_bot.py
