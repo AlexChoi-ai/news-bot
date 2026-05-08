@@ -29,32 +29,31 @@ def get_google_news(publisher, target_count):
                 'parsed_date': parser.parse(entry.published).astimezone(datetime.timezone(datetime.timedelta(hours=9)))
             })
             seen_titles.add(title_key)
-        if len(news_list) >= target_count * 3:
+        if len(news_list) >= target_count * 2:
             break
+    
+    # 해당 언론사 뉴스들만 최신순으로 정렬
+    news_list.sort(key=lambda x: x['parsed_date'], reverse=True)
     return news_list
 
 def main():
-    # 한국 시간 기준 설정
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
     date_str = now.strftime("%y년 %m월 %d일")
     hour = now.hour
     
-    # [수정] 사용자 요청에 따른 수동 실행 검증 구간 설정
     if 7 <= hour < 18:
-        # 07:00 ~ 17:59 사이 실행 시
         time_tag = "07시"
         sub_header = "어제 저녁부터 오늘 아침까지의 주요 뉴스"
     else:
-        # 18:00 ~ 익일 06:59 사이 실행 시
         time_tag = "18시"
         sub_header = "오늘 하루의 주요 뉴스 8개"
 
-    # 1. 언론사별 수집
+    # 1. 언론사별 수집 및 해당 언론사 내 최신순 정렬
     raw_yeonhap = get_google_news("연합뉴스", 4)
     raw_hankyung = get_google_news("한국경제", 2)
     raw_ytn = get_google_news("YTN", 2)
     
-    # 2. 비중대로 우선 수집
+    # 2. [수정] 비중대로 '순서대로' 담기 (섞이지 않게)
     final_news = []
     final_news.extend(raw_yeonhap[:4])
     final_news.extend(raw_hankyung[:2])
@@ -71,8 +70,8 @@ def main():
                 final_news.append(extra)
                 current_links.add(extra['link'])
 
-    # 4. [보완] 최종 뉴스 8개를 다시 한번 최신순으로 정렬 (사용자 가독성)
-    final_news.sort(key=lambda x: x['parsed_date'], reverse=True)
+    # [핵심 수정] 마지막에 전체 정렬을 하지 않습니다. 
+    # 그래야 연합뉴스 4개 -> 한국경제 2개 -> YTN 2개 순서가 유지됩니다.
 
     # 메시지 생성
     if not final_news:
@@ -83,9 +82,9 @@ def main():
         message += "━━━━━━━━━━━━━━━━━━\n\n"
         for i, news in enumerate(final_news, 1):
             pub_time = news['parsed_date'].strftime('%H:%M')
-            message += f"{i}. <a href='{news['link']}'>{news['title']}</a> [{pub_time}]\n\n"
+            # 제목 뒤에 언론사 이름을 붙여서 비중이 잘 맞는지 확인하기 쉽게 만들었습니다.
+            message += f"{i}. <a href='{news['link']}'>{news['title']}</a> [{news['publisher']} / {pub_time}]\n\n"
 
-    # 전송
     send_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     for chat_id in CHAT_ID_LIST:
         payload = {"chat_id": chat_id, "text": message, "parse_mode": "HTML", "disable_web_page_preview": False}
