@@ -2,8 +2,8 @@ name: Daily News Bot
 
 on:
   schedule:
-    - cron: '0 22 * * *'  # 한국 오전 07:00
-    - cron: '0 9 * * *'   # 한국 오후 18:00
+    - cron: '0 22 * * *'  # 한국 오전 07:00 (UTC 22:00)
+    - cron: '0 9 * * *'   # 한국 오후 18:00 (UTC 09:00)
   workflow_dispatch:      # 수동 실행 버튼
 
 env:
@@ -12,6 +12,10 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Git Push를 위해 쓰기 권한을 명시적으로 부여합니다.
+    permissions:
+      contents: write
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,7 +24,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          # 에러의 원인이 된 cache 설정을 삭제했습니다.
 
       - name: Install dependencies
         run: |
@@ -32,3 +35,16 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID_LIST: ${{ secrets.CHAT_ID_LIST }}
         run: python news_bot.py
+
+      - name: Commit and Push last_news.txt
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # last_news.txt 파일이 변경되었을 때만 커밋하고 푸시합니다.
+          if [ -f last_news.txt ]; then
+            git add last_news.txt
+            git commit -m "Update morning news history [skip ci]" || echo "No changes to commit"
+            git push
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
