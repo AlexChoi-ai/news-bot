@@ -28,30 +28,25 @@ def main():
     feed = feedparser.parse(rss_url)
     raw_list = []
     
-    # [설정] 경제 및 주요 통신사 우선순위 (점수가 낮을수록 상단 배치)
-    priority_map = {
-        "연합뉴스": 1, "YTN": 1, "연합뉴스TV": 1,
-        "한국경제": 2, "매일경제": 2, "연합인포맥스": 2,
-        "중앙일보": 3,
-        "한겨레": 20, "경향신문": 20, "조선일보": 20, "동아일보": 20
+    # [화이트리스트] 대한민국 주요 신뢰 언론사 20선 (이 외 언론사는 자동 제외)
+    # 1순위: 통신사 및 경제지 / 2순위: 지상파 및 주요 일간지 / 3순위: 최소 노출 일간지
+    trusted_publishers = {
+        # 1순위 (강력 추천)
+        "연합뉴스": 1, "연합뉴스TV": 1, "연합인포맥스": 1, "YTN": 1,
+        "한국경제": 2, "매일경제": 2, "머니투데이": 2, "서울경제": 2, "헤럴드경제": 2,
+        # 2순위 (지상파 및 주요지)
+        "KBS": 3, "MBC 뉴스": 3, "SBS 뉴스": 3, "중앙일보": 3, "세계일보": 3, "문화일보": 3, "서울신문": 3,
+        # 3순위 (최소 노출 대상)
+        "조선일보": 20, "동아일보": 20, "한겨레": 20, "경향신문": 20
     }
     
-    # [차단 키워드]
+    # [강력 차단 키워드] 스포츠, 헬스 관련 정밀 필터링
     ignore_words = [
         "주요뉴스", "뉴스브리핑", "뉴스특보",
-        "출연", "데뷔", "열애", "결혼", "종영", "시청률", "아이돌", "멤버", "콘서트", 
-        "리그", "경기", "득점", "홈런", "완승", "패배", "감독", "스포츠", "우승", "선수", 
-        "당뇨", "혈당", "다이어트", "효능", "비결", "건강", "치료", "암", "복용", "피부", 
+        "출연", "데뷔", "열애", "결혼", "시청률", "아이돌", "멤버", "콘서트", 
+        "리그", "경기", "득점", "홈런", "완승", "패배", "연승", "연패", "감독", "스포츠", "우승", "선수", "타점", # 스포츠 강화
+        "당뇨", "혈당", "다이어트", "효능", "비결", "건강", "치료", "암", "복용", "피부", "의학", "교수 연구팀", # 헬스 강화
         "출시", "특가", "사전 예약", "사전예약", "스펙", "리뷰", "가성비", "할인", "이벤트", "체험단"
-    ]
-    
-    # [제외 언론사] 마이너 매체, 전문지, 협회지, 종교지 등 대폭 추가
-    exclude_publishers = [
-        "법보신문", "한국AI부동산신문", "한국세정신문", "한국무역협회-KITA.NET", "시사저널",
-        "뉴스탭", "후생신보", "스포츠조선", "스포츠서울", "OSEN", "마이데일리", "스타뉴스", 
-        "뉴스엔", "TV리포트", "헬스조선", "코메디닷컴", "하이닥", "의학신문", "약업신문", 
-        "전자신문", "디지털데일리", "테크M", "IT조선", "보드나라", "씨넷코리아",
-        "일간스포츠", "엑스포츠뉴스", "스타투데이", "조세일보", "보건신문"
     ]
 
     for entry in feed.entries:
@@ -64,17 +59,15 @@ def main():
                 title = full_title[0].strip()
                 publisher = full_title[1].strip() if len(full_title) > 1 else "뉴스"
                 
-                # 필터링 로직
-                if publisher in exclude_publishers: continue
-                if any(word in title for word in ignore_words): continue
+                # [로직 1] 화이트리스트 검사: 신뢰 언론사 리스트에 없으면 무조건 제외
+                if publisher not in trusted_publishers:
+                    continue
                 
-                # 매체명에 특정 단어가 포함된 경우 자동 차단 (필터링 강화)
-                if any(p_word in publisher for p_word in ["스포츠", "헬스", "연예", "게임", "신문", "투데이"]):
-                    # 단, 메이저 경제신문과 일간지는 예외 처리
-                    if publisher not in priority_map:
-                        continue
+                # [로직 2] 키워드 검사: "연승", "교수 연구팀" 등 불필요한 주제 제외
+                if any(word in title for word in ignore_words):
+                    continue
                 
-                score = priority_map.get(publisher, 10) 
+                score = trusted_publishers.get(publisher, 10)
                 
                 raw_list.append({
                     'title': title, 'link': entry.link, 'publisher': publisher,
@@ -88,7 +81,9 @@ def main():
     final_news = []
     seen_titles = [] 
     pub_counts = {} 
-    min_exposure_list = ["한겨레", "경향신문", "조선일보", "동아일보"]
+    
+    # 최소 노출을 적용할 언론사 리스트 (점수 20점 그룹)
+    min_exposure_list = [k for k, v in trusted_publishers.items() if v == 20]
 
     for news in raw_list:
         if len(final_news) >= 8: break
@@ -100,6 +95,8 @@ def main():
 
         publisher = news['publisher']
         current_pub_count = pub_counts.get(publisher, 0)
+        
+        # 노출 제한: 3순위 언론사는 최대 1개, 나머지는 최대 2개
         limit = 1 if publisher in min_exposure_list else 2
         
         if current_pub_count < limit:
