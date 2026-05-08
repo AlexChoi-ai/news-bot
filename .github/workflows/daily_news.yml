@@ -2,21 +2,31 @@ name: Daily News Bot
 
 on:
   schedule:
-    # 한국 시간 기준 오전 07:00와 오후 18:00에 실행
+    # 한국 시간 기준 오전 07:00 (UTC 22:00)
     - cron: '0 22 * * *'
+    # 한국 시간 기준 오후 18:00 (UTC 09:00)
     - cron: '0 9 * * *'
-  workflow_dispatch:      # 수동 실행 버튼을 만들어줍니다.
+  workflow_dispatch:      # 수동 실행 버튼 활성화
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+
       - name: Install dependencies
-        run: pip install feedparser requests python-dateutil
-      - name: Run script
+        run: |
+          pip install feedparser requests python-dateutil
+
+      - name: Run news bot script
+        env:
+          # GitHub Secrets에 저장한 변수들을 파이썬 환경변수로 전달합니다.
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID_LIST: ${{ secrets.CHAT_ID_LIST }}
         run: python news_bot.py
