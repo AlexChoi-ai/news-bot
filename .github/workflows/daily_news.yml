@@ -2,23 +2,23 @@ name: Daily News Bot
 
 on:
   schedule:
-    - cron: '0 22 * * *'  # 한국 오전 07:00 (UTC 22:00)
-    - cron: '0 9 * * *'   # 한국 오후 18:00 (UTC 09:00)
-  workflow_dispatch:      # 수동 실행 버튼
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    # 지연을 고려해 10분 정도 앞당겨 설정하거나, 정시 실행을 기다려야 합니다.
+    - cron: '50 21 * * *'  # 한국 오전 06:50 (UTC 21:50)
+    - cron: '50 8 * * *'   # 한국 오후 17:50 (UTC 08:50)
+  workflow_dispatch:      
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Git Push를 위해 쓰기 권한을 명시적으로 부여합니다.
     permissions:
       contents: write
       
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # 최신 상태를 유지하기 위해 fetch-depth를 0으로 설정
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,11 +40,14 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # last_news.txt 파일이 변경되었을 때만 커밋하고 푸시합니다.
-          if [ -f last_news.txt ]; then
-            git add last_news.txt
-            git commit -m "Update morning news history [skip ci]" || echo "No changes to commit"
-            git push
-          fi
+          
+          # 파일이 없으면 생성, 있으면 추가
+          touch last_news.txt
+          
+          git add last_news.txt
+          # [skip ci]를 넣으면 이 커밋으로 인해 액션이 트리거되지는 않지만, 
+          # 스케줄러 활성화를 위해 가끔은 직접 커밋하는 것이 좋습니다.
+          git commit -m "Update news history" || echo "No changes to commit"
+          git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
