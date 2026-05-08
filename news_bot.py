@@ -5,98 +5,106 @@ import os
 from dateutil import parser
 from urllib.parse import quote
 
-# 환경 변수 설정
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID_RAW = os.environ.get("CHAT_ID_LIST")
 CHAT_ID_LIST = [chat_id.strip() for chat_id in CHAT_ID_RAW.split(",")] if CHAT_ID_RAW else []
 
-def get_verified_news(search_publisher, domain_keyword, target_count, start_time, end_time):
-    """특정 시간 구간 내의 특정 언론사 기사를 수집"""
+def get_flexible_news(publisher, domain_keyword, target_count, start_time, end_time):
+    # 검색 범위를 1d로 넓게 잡아서 충분한 기사 후보군을 확보합니다.
     exclude_query = "-연예 -스포츠 -야구 -축구 -골프 -드라마 -아이돌"
-    query = quote(f'source:{search_publisher} when:1d {exclude_query}')
+    query = quote(f'source:{publisher} when:1d {exclude_query}')
     rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
     feed = feedparser.parse(rss_url)
     
-    verified_list = []
+    news_pool = []
     seen_titles = set()
     
     for entry in feed.entries:
-        if len(verified_list) >= target_count:
-            break
-            
         pub_date = parser.parse(entry.published).astimezone(datetime.timezone(datetime.timedelta(hours=9)))
         
-        # [핵심] 사용자가 요청한 시간 구간 내에 있는지 확인
-        if not (start_time <= pub_date <= end_time):
-            continue
-
-        full_title = entry.title.rsplit(' - ', 1)
-        title = full_title[0].strip()
-        pub_name = full_title[1].strip() if len(full_title) > 1 else search_publisher
-        
-        if domain_keyword in entry.link or search_publisher in pub_name:
-            title_key = "".join(title.split())[:15]
-            if title_key not in seen_titles:
-                verified_list.append({
-                    'title': title,
-                    'link': entry.link,
-                    'publisher': pub_name,
-                    'parsed_date': pub_date
-                })
-                seen_titles.add(title_key)
+        # [수정] 1순위: 지정된 시간 구간 내의 기사만 담습니다.
+        if start_time <= pub_date <= end_time:
+            full_title = entry.title.rsplit(' - ', 1)
+            title = full_title[0].strip()
+            pub_name = full_title[1].strip() if len(full_title) > 1 else publisher
+            
+            # 도메인 검증 (낚시 방지)
+            if domain_keyword in entry.link or publisher in pub_name:
+                title_key = "".join(title.split())[:15]
+                if title_key not in seen_titles:
+                    news_pool.append({
+                        'title': title, 'link': entry.link, 'publisher': pub_name, 'parsed_date': pub_date
+                    })
+                    seen_titles.add(title_key)
     
-    # 구글이 제공한 관련성(인기) 순서를 유지하되, 그 안에서 최신순 정렬
-    return verified_list
+    # 해당 구간 뉴스를 최신순(인기순 기반)으로 정렬
+    news_pool.sort(key=lambda x: x['parsed_date'], reverse=True)
+    return news_pool[:target_count]
 
 def main():
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
     date_str = now.strftime("%y년 %m월 %d일")
     hour = now.hour
     
-    # 1. 시간대별 수집 구간 설정 (사용자 요청 기준)
+    # 시간대별 수집 구간 설정
     if 7 <= hour < 18:
-        # 아침 7시 브리핑용: 전날 18:01 ~ 당일 06:59
-        time_tag = "07시"
-        sub_header = "어제 저녁부터 오늘 아침까지의 주요 뉴스"
-        end_time = now.replace(hour=6, minute=59, second=59, microsecond=0)
+        time_tag = "07시"; sub_header = "어제 저녁부터 오늘 아침까지의 주요 뉴스"
+        end_time = now.replace(hour=6, minute=59, second=59)
         start_time = (end_time - datetime.timedelta(days=1)).replace(hour=18, minute=1, second=0)
     else:
-        # 저녁 18시 브리핑용: 당일 07:00 ~ 당일 17:59
-        time_tag = "18시"
-        sub_header = "오늘 하루의 주요 뉴스 8개"
-        start_time = now.replace(hour=7, minute=0, second=0, microsecond=0)
-        end_time = now.replace(hour=17, minute=59, second=59, microsecond=0)
+        time_tag = "18시"; sub_header = "오늘 하루의 주요 뉴스 8개"
+        start_time = now.replace(hour=7, minute=0, second=0)
+        end_time = now.replace(hour=17, minute=59, second=59)
 
-    # 2. 언론사별 검증 수집 (연합 4 / 한경 2)
-    news_yeonhap = get_verified_news("연합뉴스", "yna.co.kr", 4, start_time, end_time)
-    news_hankyung = get_verified_news("한국경제", "hankyung.com", 2, start_time, end_time)
+    # 1. 메인 수집 (비중: 연합 4, 한경 2)
+    final_news = []
+    final_news.extend(get_flexible_news("연합뉴스", "yna.co.kr", 4, start_time, end_time))
+    final_news.extend(get_flexible_news("한국경제", "hankyung.com", 2, start_time, end_time))
     
-    # 3. 비중대로 결합
-    final_news = news_yeonhap + news_hankyung
-    collected_links = {n['link'] for n in final_news}
-    
-    # 4. 나머지 2개는 구간 내 랜덤 보충 (구글 뉴스 메인 기반)
-    # (get_random_news 함수도 시간 필터가 필요하여 메인에서 직접 처리하거나 
-    # 위 함수를 재활용할 수 있지만, 안정성을 위해 검증 함수로 보충합니다.)
+    # 2. 부족분 채우기 (연합/한경 외 다른 주요 언론사 포함)
     if len(final_news) < 8:
-        extra = get_verified_news("중앙일보", "joongang.co.kr", 8 - len(final_news), start_time, end_time)
-        final_news.extend(extra)
+        current_links = {n['link'] for n in final_news}
+        # 구글 뉴스 전체에서 해당 시간대 기사 보충
+        query = quote(f'when:1d -연예 -스포츠')
+        rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
+        feed = feedparser.parse(rss_url)
+        
+        for entry in feed.entries:
+            if len(final_news) >= 8: break
+            pub_date = parser.parse(entry.published).astimezone(datetime.timezone(datetime.timedelta(hours=9)))
+            if start_time <= pub_date <= end_time and entry.link not in current_links:
+                full_title = entry.title.rsplit(' - ', 1)
+                final_news.append({
+                    'title': full_title[0].strip(),
+                    'link': entry.link,
+                    'publisher': full_title[1].strip() if len(full_title) > 1 else "뉴스",
+                    'parsed_date': pub_date
+                })
+                current_links.add(entry.link)
 
-    # 메시지 생성
-    if not final_news:
-        message = f"<b>📢 [{date_str} {time_tag} 뉴스요약]</b>\n<b>{sub_header}</b>\n\n지정한 시간 구간 내에 새로운 소식이 없습니다."
-    else:
-        message = f"<b>📢 [{date_str} {time_tag} 뉴스요약]</b>\n"
-        message += f"<b>{sub_header}</b>\n"
-        message += "━━━━━━━━━━━━━━━━━━\n\n"
-        for i, news in enumerate(final_news[:8], 1):
-            pub_time = news['parsed_date'].strftime('%H:%M')
-            message += f"{i}. <a href='{news['link']}'>{news['title']}</a> [{news['publisher']} / {pub_time}]\n\n"
+    # 3. [최종 보루] 그래도 8개가 안 되면 시간 필터를 해제하고 가장 최신 뉴스라도 채움
+    if len(final_news) < 8:
+        feed = feedparser.parse("https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko")
+        for entry in feed.entries:
+            if len(final_news) >= 8: break
+            if entry.link not in {n['link'] for n in final_news}:
+                full_title = entry.title.rsplit(' - ', 1)
+                final_news.append({
+                    'title': full_title[0].strip(),
+                    'link': entry.link,
+                    'publisher': full_title[1].strip() if len(full_title) > 1 else "뉴스",
+                    'parsed_date': parser.parse(entry.published).astimezone(datetime.timezone(datetime.timedelta(hours=9)))
+                })
 
-    # 전송 로직
-    send_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    # 메시지 생성 및 전송 (생략 없이 8개 유지)
+    message = f"<b>📢 [{date_str} {time_tag} 뉴스요약]</b>\n<b>{sub_header}</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+    for i, news in enumerate(final_news[:8], 1):
+        pub_time = news['parsed_date'].strftime('%H:%M')
+        message += f"{i}. <a href='{news['link']}'>{news['title']}</a> [{news['publisher']} / {pub_time}]\n\n"
+
     for chat_id in CHAT_ID_LIST:
-        requests.post(send_url, data={"chat_id": chat_id, "text": message, "parse_mode": "HTML", "disable_web_page_preview": False})
+        requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
+                      data={"chat_id": chat_id, "text": message, "parse_mode": "HTML", "disable_web_page_preview": False})
 
 if __name__ == "__main__":
     main()
