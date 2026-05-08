@@ -2,9 +2,11 @@ name: Daily News Bot
 
 on:
   schedule:
-    # 정각보다는 5~10분 정도 오프셋을 주는 것이 실행 확률이 더 높습니다.
-    - cron: '5 21 * * *'  # 한국 오전 07:05 (UTC 22:05)
-    - cron: '10 8 * * *'  # 한국 오후 18:10 (UTC 09:10)
+    # GitHub Actions의 Cron은 UTC 기준입니다. (KST = UTC + 9)
+    # 1. 한국 오전 06:40 실행 (UTC 21:40 - 전날)
+    - cron: '40 21 * * *'
+    # 2. 한국 오후 17:40 실행 (UTC 08:40)
+    - cron: '40 8 * * *'
   workflow_dispatch:      
 
 jobs:
@@ -17,7 +19,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 히스토리를 모두 가져와 Push 충돌 방지
+          fetch-depth: 0 # 히스토리를 가져와 Push 충돌 방지
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -33,6 +35,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID_LIST: ${{ secrets.CHAT_ID_LIST }}
+        # 이전 파이썬 파일명이 main.py였다면 파일명을 맞춰주세요.
         run: python news_bot.py
 
       - name: Commit and Push last_news.txt
@@ -40,11 +43,15 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
+          # 파일이 변경되었는지 확인 후 커밋 (변경사항이 없으면 스킵)
           if [ -f last_news.txt ]; then
             git add last_news.txt
-            # [skip ci]는 유지하되, 강제로 main 브랜치에 푸시하도록 명시
-            git commit -m "Update news history [skip ci]" || echo "No changes"
-            git push origin main
+            if git diff --staged --quiet; then
+              echo "No changes to commit"
+            else
+              git commit -m "Update news history [skip ci]"
+              git push origin main
+            fi
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
