@@ -21,28 +21,25 @@ def get_news_by_time(query_str, target_count, start_time, end_time):
     results = []
     seen_titles = set()
     
-    # [개선] 금지어 목록 확장 (안정성 강화)
     ban_list = ['연예', '스포츠', '축구', '야구', '골프', '드라마', '아이돌', '방송', '뮤직', '열애', '결혼', '출연']
     
     for entry in feed.entries:
+        # 필터링을 통과한 기사가 타겟 숫자를 채우면 중단
         if len(results) >= target_count:
             break
             
         try:
-            # 발행 시간을 한국 시간(KST)으로 변환
             pub_date = parser.parse(entry.published).astimezone(datetime.timezone(datetime.timedelta(hours=9)))
             
-            # [기존 유지] 지정된 시간 구간 내의 기사인지 확인
+            # 시간 구간 내 기사인지 확인
             if start_time <= pub_date <= end_time:
                 full_title = entry.title.rsplit(' - ', 1)
                 title = full_title[0].strip()
                 publisher = full_title[1].strip() if len(full_title) > 1 else "뉴스"
                 
-                # [기존 유지] 제목 금지어 필터링
                 if any(word in title for word in ban_list):
                     continue
                     
-                # [기존 유지] 제목 유사도 기반 중복 방지
                 title_key = "".join(title.split())[:15]
                 if title_key not in seen_titles:
                     results.append({
@@ -52,20 +49,18 @@ def get_news_by_time(query_str, target_count, start_time, end_time):
                         'parsed_date': pub_date
                     })
                     seen_titles.add(title_key)
-        except Exception as e:
-            print(f"기사 파싱 중 오류 발생: {e}")
+        except Exception:
             continue
             
     return results
 
 def main():
-    # [개선] GitHub Actions 서버 시간(UTC)에 관계없이 한국 시간 강제 지정
     kst = datetime.timezone(datetime.timedelta(hours=9))
     now = datetime.datetime.now(kst)
     date_str = now.strftime("%y년 %m월 %d일")
     hour = now.hour
     
-    # [기존 유지] 시간 구간 설정 로직
+    # [기존 유지] 시간 구간 설정
     if 7 <= hour < 18:
         time_tag = "07시"
         sub_header = "어제 저녁부터 오늘 아침까지의 주요 뉴스"
@@ -78,52 +73,52 @@ def main():
         end_time = now.replace(hour=17, minute=59, second=59, microsecond=0)
 
     final_news = []
+    collected_links = set()
     
-    # 1. 연합뉴스 (최대 4개)
-    final_news.extend(get_news_by_time("source:연합뉴스", 4, start_time, end_time))
+    # 1. 연합뉴스 수집 (최대 4개 목표, 검색은 넉넉하게 15개 시도)
+    yonhap = get_news_by_time("source:연합뉴스", 4, start_time, end_time)
+    for n in yonhap:
+        final_news.append(n)
+        collected_links.add(n['link'])
     
-    # 2. 한국경제 (최대 2개, 중복 제외)
-    collected_links = {n['link'] for n in final_news}
-    hankyung_candidates = get_news_by_time("source:한국경제", 2, start_time, end_time)
-    for n in hankyung_candidates:
+    # 2. 한국경제 수집 (최대 2개 목표)
+    hankyung = get_news_by_time("source:한국경제", 2, start_time, end_time)
+    for n in hankyung:
         if n['link'] not in collected_links:
             final_news.append(n)
             collected_links.add(n['link'])
             
-    # 3. 전체 인기 뉴스로 8개 채우기
+    # 3. 8개가 채워질 때까지 전체 언론사에서 수집 (중복 제외)
+    # 검색 범위를 넉넉히 20개로 잡아 필터링 후에도 8개가 남도록 함
     if len(final_news) < 8:
-        general_candidates = get_news_by_time("", 10, start_time, end_time)
-        for n in general_candidates:
-            if len(final_news) >= 8: break
+        needed = 8 - len(final_news)
+        general = get_news_by_time("", 20, start_time, end_time)
+        for n in general:
+            if len(final_news) >= 8:
+                break
             if n['link'] not in collected_links:
                 final_news.append(n)
                 collected_links.add(n['link'])
 
-    # [개선] 메시지 생성 및 전송 (에러 처리 및 가독성 강화)
+    # 메시지 전송 로직
     if final_news:
         message = f"<b>📢 [{date_str} {time_tag} 뉴스요약]</b>\n<b>{sub_header}</b>\n━━━━━━━━━━━━━━━━━━\n\n"
+        # 정확히 8개만 슬라이싱하여 전송
         for i, news in enumerate(final_news[:8], 1):
             pub_time = news['parsed_date'].strftime('%H:%M')
-            # HTML 특수문자 탈출 처리는 하지 않으나, 링크 안정성을 위해 f-string 사용
             message += f"{i}. <a href='{news['link']}'>{news['title']}</a> [{news['publisher']} / {pub_time}]\n\n"
 
         send_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        
         for chat_id in CHAT_ID_LIST:
             try:
-                response = requests.post(
-                    send_url, 
-                    data={
-                        "chat_id": chat_id, 
-                        "text": message, 
-                        "parse_mode": "HTML", 
-                        "disable_web_page_preview": False
-                    },
-                    timeout=10 # [개선] 타임아웃 설정으로 무한 대기 방지
-                )
-                response.raise_for_status() # 4xx, 5xx 에러 시 예외 발생
+                requests.post(send_url, data={
+                    "chat_id": chat_id, 
+                    "text": message, 
+                    "parse_mode": "HTML", 
+                    "disable_web_page_preview": False
+                }, timeout=10)
             except Exception as e:
-                print(f"텔레그램 전송 중 오류 발생 (Chat ID: {chat_id}): {e}")
+                print(f"전송 실패: {e}")
 
 if __name__ == "__main__":
     main()
