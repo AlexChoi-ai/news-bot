@@ -1,0 +1,85 @@
+import feedparser
+import requests
+import datetime
+from dateutil import parser
+from urllib.parse import quote
+
+# 1. 사용자 정보 설정
+BOT_TOKEN = "8768248296:AAE8Hxv518pUjKJfLyetK1xW-d6XvIuyukM"
+CHAT_ID = "6063997152"
+
+def get_google_news(publisher):
+    exclude_query = "-연예 -스포츠 -야구 -축구 -골프 -드라마 -아이돌 -출시 -할인 -이벤트"
+    query = quote(f"source:{publisher} when:1d {exclude_query}")
+    rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
+    
+    feed = feedparser.parse(rss_url)
+    news_list = []
+    for entry in feed.entries:
+        news_list.append({
+            'title': entry.title.split(' - ')[0].strip(),
+            'link': entry.link,
+            'parsed_date': parser.parse(entry.published).astimezone(datetime.timezone(datetime.timedelta(hours=9)))
+        })
+    return news_list
+
+def main():
+    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
+    hour = now.hour
+    date_str = now.strftime("%y년 %m월 %d일")
+    
+    press_list = ["연합뉴스", "한국경제"]
+    all_raw_news = []
+    for press in press_list:
+        all_raw_news.extend(get_google_news(press))
+    
+    unique_news = []
+    seen_titles = set()
+    for news in all_raw_news:
+        title_key = "".join(news['title'].split())[:15]
+        if title_key not in seen_titles:
+            unique_news.append(news)
+            seen_titles.add(title_key)
+
+    today_07am = now.replace(hour=7, minute=0, second=0, microsecond=0)
+    
+    # ---------------------------------------------------------
+    # [레이아웃 및 메시지 헤더 설정]
+    # ---------------------------------------------------------
+    if hour < 12:
+        target_count = 8
+        time_tag = "07시"
+        sub_header = "어제 저녁의 주요 뉴스 8개"
+        filtered_news = unique_news
+    else:
+        target_count = 8
+        time_tag = "18시"
+        sub_header = "오늘 하루의 주요 뉴스 8개"
+        filtered_news = [n for n in unique_news if n['parsed_date'] > today_07am]
+
+    top_news = filtered_news[:target_count]
+    
+    if not top_news:
+        message = f"<b>📢 [{date_str} {time_tag} 뉴스요약]</b>\n<b>{sub_header}</b>\n\n새로운 소식이 없습니다."
+    else:
+        # 요청하신 줄바꿈 및 강조 형식 적용
+        message = f"<b>📢 [{date_str} {time_tag} 뉴스요약]</b>\n"
+        message += f"<b>{sub_header}</b>\n"
+        message += "━━━━━━━━━━━━━━━━━━\n\n"
+        
+        for i, news in enumerate(top_news, 1):
+            pub_time = news['parsed_date'].strftime('%H:%M')
+            message += f"{i}. <a href='{news['link']}'>{news['title']}</a> [{pub_time}]\n\n"
+
+    # 텔레그램 전송
+    send_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID, 
+        "text": message, 
+        "parse_mode": "HTML", 
+        "disable_web_page_preview": False
+    }
+    requests.post(send_url, data=payload)
+
+if __name__ == "__main__":
+    main()
