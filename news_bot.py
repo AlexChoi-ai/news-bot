@@ -24,33 +24,33 @@ def main():
                 morning_history = {line.strip() for line in f.readlines()}
         except: pass
 
-    # 구글 뉴스 헤드라인 RSS
     rss_url = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"
-    
     feed = feedparser.parse(rss_url)
     raw_list = []
     
-    # [설정] 우선순위 언론사
-    priority_map = {"연합뉴스": 1, "YTN": 2, "한국경제": 3, "매일경제": 4}
+    # [설정] 경제 및 시사 중심 언론사 우선순위
+    priority_map = {"연합뉴스": 1, "YTN": 1, "한국경제": 2, "매일경제": 2, "경향신문": 3, "한겨레": 3, "중앙일보": 3, "동아일보": 3}
     
-    # [추가] 제외 키워드 (연예, 스포츠, 건강/광고성)
+    # [강화] 제외 키워드 (전자제품 광고, 헬스, 스포츠, 연예)
     ignore_words = [
-        "주요뉴스", "뉴스브리핑", "오늘의", "이 시각", "자막뉴스", "뉴스특보",
-        "출연", "데뷔", "결혼", "이혼", "열애", "종영", "시청률", "컴백", "독점", # 연예
-        "리그", "경기", "득점", "홈런", "완승", "패배", "감독", "스포츠", "우승", # 스포츠
-        "당뇨", "혈당", "다이어트", "효능", "비결", "건강", "치료", "항암"      # 헬스/광고
+        "주요뉴스", "뉴스브리핑", "뉴스특보",
+        "출연", "데뷔", "열애", "결혼", "종영", "시청률", "아이돌", "멤버", "콘서트", # 연예
+        "리그", "경기", "득점", "홈런", "완승", "패배", "감독", "스포츠", "우승", "선수", # 스포츠
+        "당뇨", "혈당", "다이어트", "효능", "비결", "건강", "치료", "암", "복용", "피부", # 헬스
+        "출시", "특가", "사전예약", "스펙", "리뷰", "가성비", "할인", "이벤트", "체험단"  # 전자제품/광고
     ]
     
-    # [추가] 제외 언론사 (연예, 스포츠, 헬스 전문지)
+    # [강화] 제외 언론사 리스트 (전문지 및 광고성 매체)
     exclude_publishers = [
-        "스포츠조선", "스포츠서울", "OSEN", "마이데일리", "스타뉴스", "뉴스엔", 
-        "헬스조선", "코메디닷컴", "하이닥", "일간스포츠", "엑스포츠뉴스"
+        "스포츠조선", "스포츠서울", "OSEN", "마이데일리", "스타뉴스", "뉴스엔", "TV리포트", # 연예/스포츠
+        "헬스조선", "코메디닷컴", "하이닥", "의학신문", "약업신문", # 헬스
+        "전자신문", "디지털데일리", "테크M", "IT조선", "보드나라", "씨넷코리아", # IT/기기
+        "머니S", "조세일보", "파이낸셜뉴스" # 일부 광고성 기사가 잦은 매체 (선택적 제외 가능)
     ]
 
     for entry in feed.entries:
         try:
             pub_date = parser.parse(entry.published).astimezone(kst)
-            # 24시간 이내 기사만
             if (now - datetime.timedelta(hours=24)) <= pub_date <= now:
                 if entry.link in morning_history: continue
 
@@ -58,14 +58,10 @@ def main():
                 title = full_title[0].strip()
                 publisher = full_title[1].strip() if len(full_title) > 1 else "뉴스"
                 
-                # [필터 1] 전문지 제외 (연예/스포츠/헬스 매체)
+                # 필터링 적용
                 if publisher in exclude_publishers: continue
-                
-                # [필터 2] 제목 키워드 필터링
                 if any(word in title for word in ignore_words): continue
-                
-                # [필터 3] 특정 서브 매체 제외 (광고성 기사 방지)
-                if "헬스" in publisher or "스포츠" in publisher: continue
+                if any(p_word in publisher for p_word in ["스포츠", "헬스", "연예", "게임", "리뷰"]): continue
                 
                 score = priority_map.get(publisher, 10)
                 
@@ -75,25 +71,29 @@ def main():
                 })
         except: continue
 
-    # 정렬: 1순위 언론사 점수, 2순위 최신순
+    # 정렬: 점수(언론사) -> 최신순
     raw_list.sort(key=lambda x: (x['score'], -x['date'].timestamp()))
 
     final_news = []
-    pub_counts = {}
+    seen_titles = [] # 중복 체크용 리스트
     
     for news in raw_list:
         if len(final_news) >= 8: break
         
+        # [중복 제거 로직 강화] 
+        # 공백 제거 후 앞 10글자가 같거나, 제목의 70% 이상이 유사한 경우 제외
+        title_stripped = "".join(news['title'].split())[:10]
+        if any(title_stripped in seen for seen in seen_titles):
+            continue
+
         p = news['publisher']
-        if pub_counts.get(p, 0) < 2:
-            t_short = "".join(news['title'].split())[:12]
-            if not any("".join(n['title'].split())[:12] == t_short for n in final_news):
-                final_news.append(news)
-                pub_counts[p] = pub_counts.get(p, 0) + 1
+        if final_news.count(p) < 2: # 동일 언론사 도배 방지
+            final_news.append(news)
+            seen_titles.append(title_stripped)
 
     if final_news:
-        message = f"<b>📢 [{date_str} {time_tag} 헤드라인]</b>\n"
-        message += f"<b>구글 AI 선정 주요 뉴스 ({len(final_news)}건)</b>\n"
+        message = f"<b>📢 [{date_str} {time_tag} 주요 실시간 뉴스]</b>\n"
+        message += f"<b>국제·경제·정세 주요 소식 ({len(final_news)}건)</b>\n"
         message += "━━━━━━━━━━━━━━━━━━\n\n"
         
         for i, n in enumerate(final_news, 1):
