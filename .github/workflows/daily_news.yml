@@ -13,10 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        # v3에서 v4로 업데이트하여 Node.js 경고 해결
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        # v4에서 v5로 업데이트하여 Node.js 경고 해결
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
@@ -26,7 +28,7 @@ jobs:
 
       - name: Run news bot script
         env:
-          # GitHub Secrets에 저장한 변수들을 파이썬 환경변수로 전달합니다.
+          # GitHub Secrets에 저장한 변수들을 파이썬 환경변수로 전달
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID_LIST: ${{ secrets.CHAT_ID_LIST }}
         run: python news_bot.py
