@@ -31,7 +31,7 @@ def main():
     date_str = now.strftime("%y년 %m월 %d일")
     
     # 더 많은 기사를 확보하기 위해 언론사를 추가하거나 검색량을 늘립니다.
-    press_list = ["연합뉴스", "한국경제", "매일경제"] 
+    press_list = ["연합뉴스", "한국경제", "YTN"] 
     all_raw_news = []
     for press in press_list:
         all_raw_news.extend(get_google_news(press))
