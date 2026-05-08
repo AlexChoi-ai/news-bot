@@ -2,11 +2,11 @@ name: Daily News Bot
 
 on:
   schedule:
-    - cron: '0 22 * * *'  # 한국 오전 07:00
-    - cron: '0 9 * * *'   # 한국 오후 18:00
+    - cron: '0 22 * * *'  # 한국 오전 07:00 (UTC 22:00)
+    - cron: '0 9 * * *'   # 한국 오후 18:00 (UTC 09:00)
   workflow_dispatch:      # 수동 실행 버튼
 
-# 실행 환경 전체에 최신 Node.js 환경 강제 적용
+# 시스템 전체에 Node.js 24 사용 강제 선언
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -15,15 +15,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        # v4로 확실히 고정
+        # Node.js 24를 지원하는 최신 v4 버전 사용
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Set up Python
-        # v5로 확실히 고정
+        # Node.js 24를 지원하는 최신 v5 버전 사용
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # 파이썬 버전도 최신 안정화 버전으로 업그레이드
-          cache: 'pip'          # 라이브러리 캐싱으로 실행 속도 향상
+          python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
