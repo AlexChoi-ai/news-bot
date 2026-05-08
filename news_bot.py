@@ -24,15 +24,28 @@ def main():
                 morning_history = {line.strip() for line in f.readlines()}
         except: pass
 
-    # [수정] 검색 대신 '구글 뉴스 헤드라인' RSS 주소 사용 (가장 중요한 뉴스 위주)
+    # 구글 뉴스 헤드라인 RSS
     rss_url = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"
     
     feed = feedparser.parse(rss_url)
     raw_list = []
     
-    # 우선순위 및 제외 단어 설정
+    # [설정] 우선순위 언론사
     priority_map = {"연합뉴스": 1, "YTN": 2, "한국경제": 3, "매일경제": 4}
-    ignore_words = ["주요뉴스", "뉴스브리핑", "오늘의", "이 시각", "자막뉴스", "뉴스특보"]
+    
+    # [추가] 제외 키워드 (연예, 스포츠, 건강/광고성)
+    ignore_words = [
+        "주요뉴스", "뉴스브리핑", "오늘의", "이 시각", "자막뉴스", "뉴스특보",
+        "출연", "데뷔", "결혼", "이혼", "열애", "종영", "시청률", "컴백", "독점", # 연예
+        "리그", "경기", "득점", "홈런", "완승", "패배", "감독", "스포츠", "우승", # 스포츠
+        "당뇨", "혈당", "다이어트", "효능", "비결", "건강", "치료", "항암"      # 헬스/광고
+    ]
+    
+    # [추가] 제외 언론사 (연예, 스포츠, 헬스 전문지)
+    exclude_publishers = [
+        "스포츠조선", "스포츠서울", "OSEN", "마이데일리", "스타뉴스", "뉴스엔", 
+        "헬스조선", "코메디닷컴", "하이닥", "일간스포츠", "엑스포츠뉴스"
+    ]
 
     for entry in feed.entries:
         try:
@@ -45,10 +58,15 @@ def main():
                 title = full_title[0].strip()
                 publisher = full_title[1].strip() if len(full_title) > 1 else "뉴스"
                 
-                # [필터 1] "주요뉴스" 같은 브리핑용 기사 제목은 제외
+                # [필터 1] 전문지 제외 (연예/스포츠/헬스 매체)
+                if publisher in exclude_publishers: continue
+                
+                # [필터 2] 제목 키워드 필터링
                 if any(word in title for word in ignore_words): continue
                 
-                # [필터 2] 연합인포맥스, biz.sbs 등 서브 매체 점수 하향 (본진 위주)
+                # [필터 3] 특정 서브 매체 제외 (광고성 기사 방지)
+                if "헬스" in publisher or "스포츠" in publisher: continue
+                
                 score = priority_map.get(publisher, 10)
                 
                 raw_list.append({
@@ -67,9 +85,7 @@ def main():
         if len(final_news) >= 8: break
         
         p = news['publisher']
-        # 언론사당 2개 제한하여 다양성 확보
         if pub_counts.get(p, 0) < 2:
-            # 제목 중복 제거
             t_short = "".join(news['title'].split())[:12]
             if not any("".join(n['title'].split())[:12] == t_short for n in final_news):
                 final_news.append(news)
@@ -77,13 +93,13 @@ def main():
 
     if final_news:
         message = f"<b>📢 [{date_str} {time_tag} 헤드라인]</b>\n"
-        message += f"<b>구글 AI 선정 주요 뉴스 (8건)</b>\n"
+        message += f"<b>구글 AI 선정 주요 뉴스 ({len(final_news)}건)</b>\n"
         message += "━━━━━━━━━━━━━━━━━━\n\n"
         
         for i, n in enumerate(final_news, 1):
             time_info = n['date'].strftime('%m.%d %H:%M')
             message += f"{i}. <a href='{n['link']}'>{n['title']}</a>\n"
-            message += f"   └ {n['publisher']} / {time_info}\n\n"
+            message += f"    └ {n['publisher']} / {time_info}\n\n"
 
         for chat_id in CHAT_ID_LIST:
             send_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
