@@ -2,11 +2,10 @@ name: Daily News Bot
 
 on:
   schedule:
-    - cron: '0 22 * * *'  # 한국 오전 07:00 (UTC 22:00)
-    - cron: '0 9 * * *'   # 한국 오후 18:00 (UTC 09:00)
+    - cron: '0 22 * * *'  # 한국 오전 07:00
+    - cron: '0 9 * * *'   # 한국 오후 18:00
   workflow_dispatch:      # 수동 실행 버튼
 
-# 시스템 전체에 Node.js 24 사용 강제 선언
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -15,13 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        # Node.js 24를 지원하는 최신 v4 버전 사용
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
       - name: Set up Python
-        # Node.js 24를 지원하는 최신 v5 버전 사용
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -34,6 +29,7 @@ jobs:
 
       - name: Run news bot script
         env:
+          # 이 아래 두 줄이 있어야 채널 아이디가 파이썬 코드로 전달됩니다!
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID_LIST: ${{ secrets.CHAT_ID_LIST }}
         run: python news_bot.py
