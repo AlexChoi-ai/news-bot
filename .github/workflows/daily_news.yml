@@ -1,0 +1,22 @@
+name: Daily News Bot
+
+on:
+  schedule:
+    # 한국 시간 기준 오전 07:00와 오후 18:00에 실행
+    - cron: '0 22 * * *'
+    - cron: '0 9 * * *'
+  workflow_dispatch:      # 수동 실행 버튼을 만들어줍니다.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install feedparser requests python-dateutil
+      - name: Run script
+        run: python news_bot.py
