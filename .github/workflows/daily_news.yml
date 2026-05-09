@@ -2,24 +2,23 @@ name: Daily News Bot
 
 on:
   schedule:
-    # GitHub Actions의 Cron은 UTC 기준입니다. (KST = UTC + 9)
-    # 1. 한국 오전 06:40 실행 (UTC 21:40 - 전날)
+    # 1. 한국 오전 06:40 실행 (UTC 21:40 - 전날) -> 오전 7시 전 도착 목표
     - cron: '40 21 * * *'
-    # 2. 한국 오후 17:40 실행 (UTC 08:40)
+    # 2. 한국 오후 17:40 실행 (UTC 08:40) -> 오후 6시 전 도착 목표
     - cron: '40 8 * * *'
-  workflow_dispatch:      
+  workflow_dispatch:      # 수동 실행 버튼 활성화
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write      # 파일 쓰기 권한 부여
       
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 히스토리를 가져와 Push 충돌 방지
+          fetch-depth: 0   # 전체 히스토리를 가져와 푸시 충돌 방지
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,7 +34,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID_LIST: ${{ secrets.CHAT_ID_LIST }}
-        # 이전 파이썬 파일명이 main.py였다면 파일명을 맞춰주세요.
+        # 파일명이 news_bot.py인지 확인해주세요.
         run: python news_bot.py
 
       - name: Commit and Push last_news.txt
@@ -43,13 +42,14 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 파일이 변경되었는지 확인 후 커밋 (변경사항이 없으면 스킵)
           if [ -f last_news.txt ]; then
             git add last_news.txt
+            # 변경사항이 있을 때만 커밋 진행
             if git diff --staged --quiet; then
               echo "No changes to commit"
             else
-              git commit -m "Update news history [skip ci]"
+              # 스케줄러 작동 방해를 방지하기 위해 [skip ci] 태그 제거
+              git commit -m "Update news history"
               git push origin main
             fi
           fi
